@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+
+  <!-- MindAR Image Tracking -->
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      touch-action: none;
+    }
+    canvas { touch-action: none; }
+
+    /* 开始体验界面 */
+    #startScreen {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; justify-content: center; align-items: center;
+      background: rgba(0, 0, 0, 0.47); z-index: 9999;
+    }
+    #startButton {
+      padding: 16px 32px; font-size: 20px; border: none; border-radius: 10px; cursor: pointer;
+    }
+
+    /* 博物馆信息卡 */
+    #infoPanel {
+      display: none; position: fixed; left: 20px; bottom: 25px;
+      max-width: 300px; padding: 14px 18px; background: rgba(0, 0, 0, 0.72);
+      color: white; border-radius: 10px; z-index: 5000;
+      font-family: Arial, "Microsoft YaHei", sans-serif; line-height: 1.6;
+    }
+    .objectTitle { font-size: 19px; font-weight: bold; margin-bottom: 6px; }
+    .objectInfo { font-size: 14px; opacity: 0.9; }
+
+    /* 开始探索提示 */
+    #explorePrompt {
+      display: none; position: fixed; left: 50%; bottom: 30px;
+      transform: translateX(-50%); width: 80%; max-width: 360px;
+      padding: 15px 20px; background: rgba(0, 0, 0, 0.82); color: white;
+      border-radius: 12px; text-align: center;
+      font-family: Arial, "Microsoft YaHei", sans-serif; z-index: 6000;
+    }
+    .exploreTitle { font-size: 20px; font-weight: bold; margin-bottom: 6px; }
+    .exploreText { font-size: 14px; line-height: 1.6; opacity: 0.9; }
+    #exploreButton {
+      margin-top: 12px; padding: 10px 24px; font-size: 16px;
+      border: none; border-radius: 8px; cursor: pointer;
+    }
+
+    /* 信息卡 */
+    #hotspotInfo {
+      display: none; position: fixed; right: 20px; bottom: 25px;
+      width: min(280px, calc(100vw - 40px)); padding: 14px 18px;
+      background: rgba(0, 0, 0, 0.84); color: white; border-radius: 10px;
+      font-family: Arial, "Microsoft YaHei", sans-serif; z-index: 7000;
+    }
+    #hotspotTitle { font-size: 18px; font-weight: bold; margin-bottom: 6px; }
+    #hotspotText { font-size: 14px; line-height: 1.6; opacity: 0.92; }
+
+    /* 答题按钮 + 答题面板 */
+    #quizStartBtn {
+      display: none; position: fixed; right: 20px; bottom: 150px;
+      padding: 12px 24px; background: #ff9800; color: white;
+      font-size: 18px; font-weight: bold; border: none; border-radius: 50px;
+      box-shadow: 0 4px 15px rgba(255, 152, 0, 0.5); cursor: pointer;
+      z-index: 8000; transition: transform 0.2s;
+    }
+    #quizStartBtn:hover { transform: scale(1.05); }
+
+    #quizPanel {
+      display: none; position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%); width: 90%; max-width: 500px;
+      background: rgba(30, 30, 30, 0.95); backdrop-filter: blur(10px);
+      color: white; border-radius: 20px; padding: 25px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7); z-index: 9000;
+      border: 1px solid rgba(255, 215, 0, 0.3);
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+    }
+    #quizPanel h2 {
+      margin-top: 0; text-align: center; color: #ffd966; font-size: 24px;
+    }
+    .question {
+      margin-bottom: 20px; padding: 15px;
+      background: rgba(255, 255, 255, 0.1); border-radius: 12px;
+      border-left: 4px solid #ffb74d;
+    }
+    .question p { margin: 0 0 10px 0; font-size: 16px; font-weight: bold; }
+    .options { display: flex; flex-direction: column; gap: 8px; }
+    .option-btn {
+      padding: 10px 15px; text-align: left;
+      background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px; color: white; font-size: 15px; cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .option-btn:hover { background: rgba(255, 255, 255, 0.25); }
+    .option-btn.correct { background: #4caf50; border-color: #4caf50; }
+    .option-btn.wrong { background: #f44336; border-color: #f44336; }
+    .option-btn:disabled { cursor: not-allowed; opacity: 0.9; }
+    .feedback { margin-top: 8px; font-size: 14px; font-weight: bold; min-height: 20px; }
+    .feedback.correct { color: #81c784; }
+    .feedback.wrong { color: #e57373; }
+    #quizCloseBtn {
+      display: block; margin: 20px auto 0; padding: 12px 30px;
+      background: #ff5722; color: white; border: none; border-radius: 50px;
+      font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s;
+    }
+    #quizCloseBtn:hover { background: #e64a19; }
+    #quizCompletionMessage {
+      text-align: center; font-size: 18px; font-weight: bold;
+      color: #ffd966; margin-top: 15px; display: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- 开始体验 -->
+  <div id="startScreen">
+    <button id="startButton">开始体验</button>
+  </div>
+
+  <!-- 音频 -->
+  <audio id="bgMusic" src="./background_music.mp3" preload="auto" loop></audio>
+  <audio id="narration" src="./narration_voice.mp3" preload="auto"></audio>
+
+  <!-- 博物馆信息卡 -->
+  <div id="infoPanel">
+    <div class="objectTitle">三彩骆驼载乐俑</div>
+    <div class="objectInfo">唐代｜西安中堡村出土<br>馆藏：陕西历史博物馆</div>
+  </div>
+
+  <!-- 开始探索 -->
+  <div id="explorePrompt">
+    <div class="exploreTitle">探索文物</div>
+    <div class="exploreText">拖动模型进行旋转，点击骆驼召唤乐团。</div>
+    <button id="exploreButton">开始召唤</button>
+  </div>
+
+
+  <!-- 答题按钮 + 答题面板 -->
+  <button id="quizStartBtn">📝 开始答题</button>
+  <div id="quizPanel">
+    <h2>文物小测验</h2>
+    <div id="question1" class="question">
+      <p>1. 三彩骆驼载乐俑出土于哪个朝代？</p>
+      <div class="options">
+        <button class="option-btn" data-q="1" data-opt="A">A. 汉代</button>
+        <button class="option-btn" data-q="1" data-opt="B">B. 唐代</button>
+        <button class="option-btn" data-q="1" data-opt="C">C. 宋代</button>
+        <button class="option-btn" data-q="1" data-opt="D">D. 明代</button>
+      </div>
+      <div id="feedback1" class="feedback"></div>
+    </div>
+    <div id="question2" class="question">
+      <p>2. 骆驼背上的乐俑有多少个？</p>
+      <div class="options">
+        <button class="option-btn" data-q="2" data-opt="A">A. 7个</button>
+        <button class="option-btn" data-q="2" data-opt="B">B. 4个</button>
+        <button class="option-btn" data-q="2" data-opt="C">C. 10个</button>
+        <button class="option-btn" data-q="2" data-opt="D">D. 100个</button>
+      </div>
+      <div id="feedback2" class="feedback"></div>
+    </div>
+    <div id="quizCompletionMessage">🎉 恭喜你完成问答！</div>
+    <button id="quizCloseBtn">关闭</button>
+  </div>
+
+  <!-- AR SCENE -->
+  <a-scene id="scene" mindar-image="imageTargetSrc: ./targets.mind;" color-space="sRGB"
+    renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false">
+    <a-camera id="camera" position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <a-entity id="target" mindar-image-target="targetIndex: 0">
+      <a-entity id="modelRoot" position="0 0 0.1" scale="1 1 1">
+        <a-entity id="spinRoot" animation="property: rotation; from: 0 0 0; to: 0 360 0; loop: true; dur: 10000; easing: linear">
+          <a-entity id="camelModel">
+            <a-gltf-model src="./camel.glb" position="0 0 0"></a-gltf-model>
+          </a-entity>
+          <a-entity id="musiciansModel" scale="0 0 0" visible="false">
+            <a-gltf-model src="./musicians_all.glb" position="0 0.9 0.17"></a-gltf-model>
+          </a-entity>
+
+          <a-entity id="hotspotRoot" visible="false">
+            
+          </a-entity>
+        </a-entity>
+      </a-entity>
+    </a-entity>
+  </a-scene>
+
+  <script>
+    /* =========================================================
+       1. 找到网页元素
+    ========================================================= */
+    const scene = document.querySelector("#scene");
+    const startScreen = document.querySelector("#startScreen");
+    const startButton = document.querySelector("#startButton");
+    const target = document.querySelector("#target");
+    const bgMusic = document.querySelector("#bgMusic");
+    const narration = document.querySelector("#narration");
+    const infoPanel = document.querySelector("#infoPanel");
+    const explorePrompt = document.querySelector("#explorePrompt");
+    const exploreButton = document.querySelector("#exploreButton");
+    const modelRoot = document.querySelector("#modelRoot");
+    const spinRoot = document.querySelector("#spinRoot");
+    const hotspotRoot = document.querySelector("#hotspotRoot");
+    const camera = document.querySelector("#camera");
+
+    const quizStartBtn = document.querySelector("#quizStartBtn");
+    const quizPanel = document.querySelector("#quizPanel");
+    const quizCloseBtn = document.querySelector("#quizCloseBtn");
+    const quizCompletionMessage = document.querySelector("#quizCompletionMessage");
+    const optionBtns = document.querySelectorAll(".option-btn");
+    const feedback1 = document.querySelector("#feedback1");
+    const feedback2 = document.querySelector("#feedback2");
+
+    /* =========================================================
+       2. 音量与状态
+    ========================================================= */
+    bgMusic.volume = 0.15;
+    narration.volume = 1;
+
+    let experienceStarted = false;
+    let targetVisible = false;
+    let narrationFinished = false;
+    let exploring = false;
+
+    let quizAnswered = { q1: false, q2: false };
+    let quizCorrect = { q1: false, q2: false };
+    let quizAllFinished = false;
+
+    /* =========================================================
+       3. 开始体验
+    ========================================================= */
+    startButton.addEventListener("click", async () => {
+      try {
+        bgMusic.muted = true;
+        await bgMusic.play();
+        bgMusic.pause();
+        bgMusic.currentTime = 0;
+        bgMusic.muted = false;
+
+        narration.muted = true;
+        await narration.play();
+        narration.pause();
+        narration.currentTime = 0;
+        narration.muted = false;
+      } catch (error) {
+        console.log("Audio unlock:", error);
+      }
+
+      experienceStarted = true;
+      startScreen.style.display = "none";
+
+      if (targetVisible) {
+        infoPanel.style.display = "block";
+        if (!exploring) explorePrompt.style.display = "block";
+      }
+    });
+
+    /* =========================================================
+       4. 识别与丢失
+    ========================================================= */
+    target.addEventListener("targetFound", () => {
+      console.log("🎯 TARGET FOUND");
+      targetVisible = true;
+
+      if (experienceStarted) infoPanel.style.display = "block";
+      if (experienceStarted && !exploring) explorePrompt.style.display = "block";
+
+      if (exploring) {
+        hotspotRoot.setAttribute("visible", true);
+        if (narrationFinished) quizStartBtn.style.display = "block";
+      }
+    });
+
+    target.addEventListener("targetLost", () => {
+      console.log("TARGET LOST");
+      targetVisible = false;
+      
+      bgMusic.pause();
+      narration.pause();
+      narration.currentTime = 0;
+      narrationFinished = false; // 重置讲解状态
+
+      infoPanel.style.display = "none";
+      explorePrompt.style.display = "none";
+      quizStartBtn.style.display = "none";
+      quizPanel.style.display = "none";
+
+      // 重置乐师
+      isSummoned = false;
+      const m = document.querySelector("#musiciansModel");
+      m.removeAttribute("animation");
+      m.setAttribute("scale", "0 0 0");
+      m.setAttribute("visible", "false");
+
+      // 清空触控状态
+      activePointers.clear();
+      pointerStarts.clear();
+      lastSingleX = null;
+      pinchStartDistance = null;
+      multiTouchUsed = false;
+    });
+
+    /* =========================================================
+       5. 讲解结束事件
+    ========================================================= */
+    narration.addEventListener("ended", () => {
+      narrationFinished = true;
+      console.log("🔊 Narration Finished");
+      if (targetVisible) quizStartBtn.style.display = "block";
+    });
+
+    /* =========================================================
+       6. 开始探索
+    ========================================================= */
+    exploreButton.addEventListener("click", () => {
+      exploring = true;
+      explorePrompt.style.display = "none";
+      stopAutoRotation();
+      alert("已开启探索！请直接点击屏幕上的骆驼，召唤乐师。");
+    });
+
+   
+    /* =========================================================
+       8. 3D 点击检测 (Raycaster)
+    ========================================================= */
+    const hotspotRaycaster = new THREE.Raycaster();
+    const pointerNDC = new THREE.Vector2();
+
+    function hitTestHotspot(clientX, clientY) {
+      if (!exploring || !targetVisible) return;
+
+      const canvas = scene.canvas;
+      const threeCamera = camera.getObject3D("camera");
+      if (!canvas || !threeCamera) return;
+
+      const rect = canvas.getBoundingClientRect();
+      pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+      hotspotRaycaster.setFromCamera(pointerNDC, threeCamera);
+
+      // 检测骆驼
+      const camelEntity = document.querySelector("#camelModel");
+      const camelMeshes = [];
+      if (camelEntity && camelEntity.object3D) {
+        camelEntity.object3D.traverse((object) => {
+          if (object.isMesh) camelMeshes.push(object);
+        });
+      }
+      const camelIntersections = hotspotRaycaster.intersectObjects(camelMeshes, false);
+
+      if (camelIntersections.length > 0) {
+        console.log("点击到了骆驼！");
+        triggerSummon();
+        return;
+      }
+
+      // 检测热点透明球
+      const hotspotMeshes = [];
+      document.querySelectorAll(".hotspot-hit").forEach((el) => {
+        if (el.object3D) {
+          el.object3D.traverse((child) => {
+            if (child.isMesh) hotspotMeshes.push(child);
+          });
+        }
+      });
+      const hotspotIntersections = hotspotRaycaster.intersectObjects(hotspotMeshes, false);
+
+      if (hotspotIntersections.length > 0) {
+        const hitMesh = hotspotIntersections[0].object;
+        const parentEl = hitMesh.el ? hitMesh.el.parentNode : null;
+        if (parentEl && parentEl.dataset.name) {
+          showHotspotInfo(parentEl);
+        }
+      }
+    }
+
+    /* =========================================================
+       9. 缩放与旋转控制
+    ========================================================= */
+    let currentScale = modelRoot.getAttribute("scale").x;
+    let currentRotationY = 0;
+    const initialScale = currentScale;
+    const minScale = initialScale * 0.5;
+    const maxScale = initialScale * 7.0;
+
+    function stopAutoRotation() {
+      currentRotationY = THREE.MathUtils.radToDeg(spinRoot.object3D.rotation.y);
+      spinRoot.removeAttribute("animation");
+      spinRoot.setAttribute("rotation", `0 ${currentRotationY} 0`);
+    }
+
+    function setModelScale(scale) {
+      currentScale = Math.max(minScale, Math.min(maxScale, scale));
+      modelRoot.setAttribute("scale", `${currentScale} ${currentScale} ${currentScale}`);
+    }
+
+    /* =========================================================
+       10. 触控事件 (拖拽/缩放/点击)
+    ========================================================= */
+    const activePointers = new Map();
+    const pointerStarts = new Map();
+    let lastSingleX = null;
+    let pinchStartDistance = null;
+    let pinchStartScale = currentScale;
+    let multiTouchUsed = false;
+    const TAP_THRESHOLD = 8;
+
+    function getPointerDistance() {
+      const points = Array.from(activePointers.values());
+      if (points.length < 2) return 0;
+      const dx = points[0].x - points[1].x;
+      const dy = points[0].y - points[1].y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    document.addEventListener("pointerdown", (event) => {
+      if (!exploring) return;
+      if (event.target.closest && event.target.closest("#startScreen, #explorePrompt, #infoPanel, #hotspotInfo, #quizPanel, #quizStartBtn")) return;
+
+      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      pointerStarts.set(event.pointerId, { x: event.clientX, y: event.clientY, moved: false });
+
+      if (activePointers.size === 1) {
+        lastSingleX = event.clientX;
+        multiTouchUsed = false;
+      }
+      if (activePointers.size === 2) {
+        multiTouchUsed = true;
+        pointerStarts.forEach((start) => { start.moved = true; });
+        pinchStartDistance = getPointerDistance();
+        pinchStartScale = currentScale;
+        lastSingleX = null;
+      }
+    });
+
+    document.addEventListener("pointermove", (event) => {
+      if (!exploring || !activePointers.has(event.pointerId)) return;
+
+      const start = pointerStarts.get(event.pointerId);
+      if (start) {
+        const totalDx = event.clientX - start.x;
+        const totalDy = event.clientY - start.y;
+        if (Math.hypot(totalDx, totalDy) > TAP_THRESHOLD) start.moved = true;
+      }
+
+      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (activePointers.size === 1 && lastSingleX !== null) {
+        const dx = event.clientX - lastSingleX;
+        currentRotationY += dx * 0.4;
+        spinRoot.setAttribute("rotation", `0 ${currentRotationY} 0`);
+        lastSingleX = event.clientX;
+      }
+
+      if (activePointers.size === 2 && pinchStartDistance) {
+        event.preventDefault();
+        const newDistance = getPointerDistance();
+        const ratio = newDistance / pinchStartDistance;
+        setModelScale(pinchStartScale * ratio);
+      }
+    }, { passive: false });
+
+    function endPointer(event) {
+      const start = pointerStarts.get(event.pointerId);
+      const isSinglePointer = activePointers.size === 1;
+      const isTap = start && !start.moved && !multiTouchUsed && isSinglePointer;
+
+      if (isTap) hitTestHotspot(event.clientX, event.clientY);
+
+      activePointers.delete(event.pointerId);
+      pointerStarts.delete(event.pointerId);
+
+      if (activePointers.size === 1) {
+        const remainingPointer = Array.from(activePointers.values())[0];
+        lastSingleX = remainingPointer.x;
+      } else {
+        lastSingleX = null;
+      }
+      if (activePointers.size < 2) pinchStartDistance = null;
+      if (activePointers.size === 0) multiTouchUsed = false;
+    }
+
+    document.addEventListener("pointerup", endPointer);
+    document.addEventListener("pointercancel", endPointer);
+
+    document.addEventListener("wheel", (event) => {
+      if (!exploring) return;
+      event.preventDefault();
+      if (event.deltaY < 0) {
+        setModelScale(currentScale * 1.10);
+      } else {
+        setModelScale(currentScale * 0.90);
+      }
+    }, { passive: false });
+
+    /* =========================================================
+       11. 召唤乐团
+    ========================================================= */
+    let isSummoned = false;
+
+    function triggerSummon() {
+      if (isSummoned) return;
+      isSummoned = true;
+
+      const musiciansEntity = document.querySelector("#musiciansModel");
+      musiciansEntity.setAttribute("visible", true);
+      musiciansEntity.setAttribute("animation", `
+        property: scale;
+        from: 0 0 0;
+        to: 0.45 0.45 0.45;
+        dur: 800;
+        easing: easeOutBack;
+      `);
+
+      setTimeout(() => {
+        console.log("🎵 乐师就位，开始奏乐与讲解");
+        narration.currentTime = 0;
+        narration.play().catch(e => console.log("讲解播放失败", e));
+        bgMusic.currentTime = 0;
+        bgMusic.play().catch(e => console.log("音乐播放失败", e));
+      }, 1500);
+    }
+
+    /* =========================================================
+       12. 答题逻辑 
+    ========================================================= */
+    quizStartBtn.addEventListener("click", () => {
+      quizPanel.style.display = "block";
+      quizStartBtn.style.display = "none";
+      resetQuiz();
+    });
+
+    quizCloseBtn.addEventListener("click", () => {
+      quizPanel.style.display = "none";
+      if (targetVisible) quizStartBtn.style.display = "block";
+    });
+
+    function resetQuiz() {
+      quizAnswered = { q1: false, q2: false };
+      quizCorrect = { q1: false, q2: false };
+      quizAllFinished = false;
+
+      quizCompletionMessage.style.display = "none";
+      feedback1.textContent = "";
+      feedback2.textContent = "";
+      feedback1.className = "feedback";
+      feedback2.className = "feedback";
+
+      optionBtns.forEach((btn) => {
+        btn.disabled = false;
+        btn.classList.remove("correct", "wrong");
+      });
+    }
+
+    // 补全被截断的选项点击逻辑
+    optionBtns.forEach((btn) => {
+      btn.addEventListener("click", function () {
+        const q = this.dataset.q;
+        const opt = this.dataset.opt;
+        const questionKey = q === "1" ? "q1" : "q2";
+
+        if (quizAnswered[questionKey]) return;
+
+        let isCorrect = false;
+        if (q === "1" && opt === "B") isCorrect = true; // 唐代
+        if (q === "2" && opt === "A") isCorrect = true; // 7个
+
+        quizAnswered[questionKey] = true;
+        quizCorrect[questionKey] = isCorrect;
+
+        // 禁用本题所有按钮
+        const parent = this.closest(".options");
+        parent.querySelectorAll(".option-btn").forEach(b => b.disabled = true);
+
+        // 判断高亮样式
+        if (isCorrect) {
+          this.classList.add("correct");
+        } else {
+          this.classList.add("wrong");
+          // 高亮正确答案
+          const correctOpt = q === "1" ? "B" : "A";
+          parent.querySelectorAll(".option-btn").forEach(b => {
+            if (b.dataset.opt === correctOpt) {
+              b.classList.add("correct");
+            }
+          });
+        }
+
+        // 显示反馈
+        const feedbackEl = q === "1" ? feedback1 : feedback2;
+        feedbackEl.textContent = isCorrect ? "✅ 回答正确！" : "❌ 回答错误，正确答案已高亮。";
+        feedbackEl.className = "feedback " + (isCorrect ? "correct" : "wrong");
+
+        // 检查是否全部答完
+        if (quizAnswered.q1 && quizAnswered.q2 && !quizAllFinished) {
+          quizAllFinished = true;
+          quizCompletionMessage.style.display = "block";
+        }
+      });
+    }); 
+
+  </script>
+</body>
+</html>
